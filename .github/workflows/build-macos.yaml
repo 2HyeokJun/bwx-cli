@@ -1,0 +1,27 @@
+name: build-macos
+on:
+  push:
+    branches: [purpose-prompt]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build --release --locked --bin bwx --bin bwx-agent
+      - name: Package (ad-hoc signed)
+        run: |
+          mkdir dist
+          cp target/release/bwx target/release/bwx-agent dist/
+          codesign --force --sign - dist/bwx dist/bwx-agent
+          (cd dist && shasum -a 256 bwx bwx-agent > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bwx-cli-macos-arm64
+          path: dist/

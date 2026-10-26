@@ -19,7 +19,15 @@ fn main() {
     bwx::logger::init(logging);
 
     let subcommand_name = opt.subcommand_name();
-    actions::set_purpose(opt.purpose());
+    // BWX_PURPOSE lets a caller state why it needs the vault. The derived
+    // command stays in the prompt so the stated purpose can't hide it.
+    let purpose = match std::env::var("BWX_PURPOSE") {
+        Ok(p) if !p.trim().is_empty() => {
+            format!("{} ({})", p.trim(), opt.purpose())
+        }
+        _ => opt.purpose(),
+    };
+    actions::set_purpose(purpose);
     let res = match opt {
         Opt::Config { config } => match config {
             Config::Show { key } => commands::config_show(key.as_deref()),
