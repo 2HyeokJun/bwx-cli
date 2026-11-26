@@ -10,6 +10,6 @@ mod tests;
 
 pub use client::Client;
 pub use types::{
-    CipherRepromptType, FieldType, KdfType, LinkedIdType,
+    CipherRepromptType, FieldType, KdfType, LinkedIdType, RefreshedTokens,
     TwoFactorProviderType, UriMatchType,
 };

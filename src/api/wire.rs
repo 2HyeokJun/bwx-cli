@@ -107,6 +107,7 @@ pub(super) struct ConnectRefreshTokenReq {
 #[derive(serde::Deserialize, Debug)]
 pub(super) struct ConnectRefreshTokenRes {
     pub(super) access_token: String,
+    pub(super) refresh_token: Option<String>,
 }
 
 #[derive(serde::Serialize, Debug)]

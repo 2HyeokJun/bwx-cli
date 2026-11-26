@@ -470,3 +470,14 @@ impl<'de> serde::Deserialize<'de> for LinkedIdType {
         }
     }
 }
+
+/// Tokens returned by a refresh-token exchange.
+///
+/// Vaultwarden issues refresh tokens that expire 30 days after they were
+/// created and hands out a new one on every exchange, so callers must store
+/// the new refresh token as well as the new access token.
+#[derive(Debug, Clone)]
+pub struct RefreshedTokens {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+}

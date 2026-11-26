@@ -5,7 +5,7 @@ use tokio::io::AsyncReadExt as _;
 use super::sso::{
     classify_login_error, find_free_port, start_sso_callback_server,
 };
-use super::types::{KdfType, TwoFactorProviderType};
+use super::types::{KdfType, RefreshedTokens, TwoFactorProviderType};
 use super::wire::{
     CipherCard, CipherField, CipherIdentity, CipherLogin, CipherLoginUri,
     CipherSecureNote, CiphersPostReq, CiphersPutReq, CiphersPutReqHistory,
@@ -764,7 +764,7 @@ impl Client {
     pub fn exchange_refresh_token(
         &self,
         refresh_token: &str,
-    ) -> Result<String> {
+    ) -> Result<RefreshedTokens> {
         let connect_req = ConnectRefreshTokenReq {
             grant_type: "refresh_token".to_string(),
             client_id: "cli".to_string(),
@@ -776,14 +776,19 @@ impl Client {
             .form(&connect_req)
             .send()
             .map_err(|source| Error::Reqwest { source })?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().unwrap_or_default();
+            return Err(refresh_token_rejected(status.as_u16(), &body));
+        }
         let connect_res: ConnectRefreshTokenRes = res.json_with_path()?;
-        Ok(connect_res.access_token)
+        Ok(connect_res.into())
     }
 
     pub async fn exchange_refresh_token_async(
         &self,
         refresh_token: &str,
-    ) -> Result<String> {
+    ) -> Result<RefreshedTokens> {
         let connect_req = ConnectRefreshTokenReq {
             grant_type: "refresh_token".to_string(),
             client_id: "cli".to_string(),
@@ -796,9 +801,14 @@ impl Client {
             .send()
             .await
             .map_err(|source| Error::Reqwest { source })?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            return Err(refresh_token_rejected(status.as_u16(), &body));
+        }
         let connect_res: ConnectRefreshTokenRes =
             res.json_with_path().await?;
-        Ok(connect_res.access_token)
+        Ok(connect_res.into())
     }
 
     fn api_url(&self, path: &str) -> String {
@@ -808,4 +818,36 @@ impl Client {
     fn identity_url(&self, path: &str) -> String {
         format!("{}{}", self.identity_url, path)
     }
+}
+
+impl From<ConnectRefreshTokenRes> for RefreshedTokens {
+    fn from(res: ConnectRefreshTokenRes) -> Self {
+        Self {
+            access_token: res.access_token,
+            refresh_token: res.refresh_token,
+        }
+    }
+}
+
+// Vaultwarden puts the reason in `errorModel.message` and `message` and sends
+// `error` / `error_description` as empty strings, so take the first non-empty
+// one of these and fall back to the raw body.
+pub(super) fn refresh_token_rejected(status: u16, body: &str) -> Error {
+    let json = serde_json::from_str::<serde_json::Value>(body).ok();
+    let message = json
+        .as_ref()
+        .and_then(|json| {
+            [
+                "/errorModel/message",
+                "/ErrorModel/Message",
+                "/message",
+                "/error_description",
+                "/error",
+            ]
+            .iter()
+            .filter_map(|path| json.pointer(path)?.as_str())
+            .find(|message| !message.is_empty())
+        })
+        .map_or_else(|| body.to_string(), str::to_string);
+    Error::RefreshTokenRejected { status, message }
 }
