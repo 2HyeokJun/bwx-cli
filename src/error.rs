@@ -182,6 +182,9 @@ pub enum Error {
         file: std::path::PathBuf,
     },
 
+    #[error("refresh token rejected by server ({status}): {message}; run `bwx purge` and `bwx login` to log in again")]
+    RefreshTokenRejected { status: u16, message: String },
+
     #[error("api request returned error: {status}")]
     RequestFailed { status: u16 },
 

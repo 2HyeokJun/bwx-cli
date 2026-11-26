@@ -27,14 +27,14 @@ pub async fn sync(
         ));
     };
     let (
-        access_token,
+        refreshed_tokens,
         (protected_key, protected_private_key, protected_org_keys, entries),
     ) = bwx::actions::sync(&access_token, &refresh_token)
         .await
         .context("failed to sync database from server")?;
     state.lock().await.set_master_password_reprompt(&entries);
-    if let Some(access_token) = access_token {
-        db.access_token = Some(access_token);
+    if let Some(tokens) = refreshed_tokens {
+        db.store_refreshed_tokens(tokens);
     }
     db.protected_key = Some(protected_key);
     db.protected_private_key = Some(protected_private_key);

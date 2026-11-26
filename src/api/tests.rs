@@ -237,3 +237,85 @@ fn linked_id_type_roundtrip() {
     let err = serde_json::from_value::<LinkedIdType>(serde_json::json!(9999));
     assert!(err.is_err());
 }
+
+#[test]
+fn refresh_token_response_keeps_rotated_refresh_token() {
+    let res: super::wire::ConnectRefreshTokenRes = serde_json::from_str(
+        r#"{"access_token":"new-access","expires_in":7200,"token_type":"Bearer","refresh_token":"new-refresh","scope":"api offline_access"}"#,
+    )
+    .unwrap();
+    let tokens: super::RefreshedTokens = res.into();
+    assert_eq!(tokens.access_token, "new-access");
+    assert_eq!(tokens.refresh_token.as_deref(), Some("new-refresh"));
+}
+
+#[test]
+fn refresh_token_response_without_refresh_token() {
+    let res: super::wire::ConnectRefreshTokenRes =
+        serde_json::from_str(r#"{"access_token":"new-access"}"#).unwrap();
+    let tokens: super::RefreshedTokens = res.into();
+    assert_eq!(tokens.access_token, "new-access");
+    assert_eq!(tokens.refresh_token, None);
+}
+
+#[test]
+fn rejected_refresh_token_reports_vaultwarden_message() {
+    let body = r#"{"message":"Invalid refresh token","validationErrors":{"":["Invalid refresh token"]},"errorModel":{"message":"Invalid refresh token","object":"error"},"error":"","error_description":"","exceptionMessage":null,"exceptionStackTrace":null,"innerExceptionMessage":null,"object":"error"}"#;
+    let err = super::client::refresh_token_rejected(400, body);
+    assert!(
+        matches!(
+            &err,
+            crate::error::Error::RefreshTokenRejected { status: 400, message }
+                if message == "Invalid refresh token"
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rejected_refresh_token_reports_oauth_error() {
+    let body = r#"{"error":"invalid_grant","error_description":"refresh token expired"}"#;
+    let err = super::client::refresh_token_rejected(400, body);
+    assert!(
+        matches!(
+            &err,
+            crate::error::Error::RefreshTokenRejected { status: 400, message }
+                if message == "refresh token expired"
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rejected_refresh_token_with_non_json_body() {
+    let err = super::client::refresh_token_rejected(502, "Bad Gateway");
+    assert!(
+        matches!(
+            &err,
+            crate::error::Error::RefreshTokenRejected { status: 502, message }
+                if message == "Bad Gateway"
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn store_refreshed_tokens_replaces_refresh_token_only_when_rotated() {
+    let mut db = crate::db::Db::new();
+    db.access_token = Some("old-access".to_string());
+    db.refresh_token = Some("old-refresh".to_string());
+
+    db.store_refreshed_tokens(super::RefreshedTokens {
+        access_token: "access-1".to_string(),
+        refresh_token: None,
+    });
+    assert_eq!(db.access_token.as_deref(), Some("access-1"));
+    assert_eq!(db.refresh_token.as_deref(), Some("old-refresh"));
+
+    db.store_refreshed_tokens(super::RefreshedTokens {
+        access_token: "access-2".to_string(),
+        refresh_token: Some("new-refresh".to_string()),
+    });
+    assert_eq!(db.access_token.as_deref(), Some("access-2"));
+    assert_eq!(db.refresh_token.as_deref(), Some("new-refresh"));
+}
